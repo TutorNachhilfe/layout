@@ -3,11 +3,11 @@
 Lokales LAN-Quiz-System (ohne Internet), vorbereitet für spätere Zusammenführung mit **gnome-classshare**.
 
 ## Datei
-- `/home/runner/work/layout/layout/layout.py` – GTK4-Lehrerfenster + HTTP/WebSocket-Server + Browser-Client
+- `layout.py` – GTK4-Lehrerfenster + HTTP/WebSocket-Server + Browser-Client
 
 ## Start
 ```bash
-python3 /home/runner/work/layout/layout/layout.py
+python3 layout.py
 ```
 
 ## Abhängigkeiten

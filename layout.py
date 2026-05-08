@@ -50,6 +50,13 @@ def get_local_ip() -> str:
 CONFIG_DIR = Path.home() / ".config" / "layout"
 SETTINGS_FILE = CONFIG_DIR / "settings.json"
 DESKTOP_FILE = Path.home() / ".local" / "share" / "applications" / "layout.desktop"
+# Schüler erscheinen im Ranking erst ab mindestens 10 gelösten Einmaleins-Aufgaben.
+MIN_RANKING_TASKS = 10
+DEFAULT_RANDOM_MIN = 1
+DEFAULT_RANDOM_MAX = 100
+MAX_NAME_LENGTH = 40
+WS_STARTUP_TIMEOUT = 3
+WS_POLL_INTERVAL = 0.05
 
 
 def load_settings() -> dict[str, Any]:
@@ -110,8 +117,8 @@ class TaskSession:
     correct: dict[str, bool] = field(default_factory=dict)
     revealed: bool = False
     random_op: str = "gemischt"
-    random_min: int = 1
-    random_max: int = 20
+    random_min: int = DEFAULT_RANDOM_MIN
+    random_max: int = DEFAULT_RANDOM_MAX
 
 
 class LayoutState:
@@ -369,7 +376,7 @@ class LayoutState:
         with self.lock:
             rows = []
             for student in self.students.values():
-                if student.score_total < 10:
+                if student.score_total < MIN_RANKING_TASKS:
                     continue
                 percent = int((student.score_correct / student.score_total) * 100)
                 rows.append({"name": student.name, "percent": percent, "count": student.score_total})
@@ -432,7 +439,7 @@ class LayoutWebSocketServer(threading.Thread):
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
 
-        async def handler(websocket):
+        async def handler(websocket: Any):
             self.clients[websocket] = ""
             try:
                 async for raw in websocket:
@@ -440,7 +447,7 @@ class LayoutWebSocketServer(threading.Thread):
                     name = self.clients.get(websocket, "")
                     msg_type = data.get("type")
                     if msg_type == "join":
-                        name = str(data.get("name", "")).strip()[:40]
+                        name = str(data.get("name", "")).strip()[:MAX_NAME_LENGTH]
                         self.clients[websocket] = name
                         self.state.join(name)
                     elif msg_type == "answer" and name:
@@ -461,7 +468,7 @@ class LayoutWebSocketServer(threading.Thread):
         async def start_server() -> None:
             self.server = await websockets.serve(handler, self.host, 0)
             self.port = self.server.sockets[0].getsockname()[1]
-            self.state.add_listener(lambda: self.loop.call_soon_threadsafe(lambda: asyncio.create_task(self.broadcast_all())))
+            self.state.add_listener(self._schedule_broadcast)
 
         self.loop.run_until_complete(start_server())
         self.loop.run_forever()
@@ -516,6 +523,11 @@ class LayoutWebSocketServer(threading.Thread):
         if snap.get("hand_seen"):
             await websocket.send(json.dumps({"type": "raise_hand_ack", "name": name}, ensure_ascii=False))
 
+    def _schedule_broadcast(self) -> None:
+        if self.loop is None:
+            return
+        self.loop.call_soon_threadsafe(lambda: asyncio.create_task(self.broadcast_all()))
+
     async def broadcast_all(self) -> None:
         stale = []
         for websocket in list(self.clients.keys()):
@@ -564,11 +576,11 @@ class LayoutHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/state":
             params = parse_qs(parsed.query)
-            name = (params.get("name") or [""])[0].strip()[:40]
+            name = (params.get("name") or [""])[0].strip()[:MAX_NAME_LENGTH]
             if not name:
                 self._json({"error": "name required"}, HTTPStatus.BAD_REQUEST)
                 return
-            assert self.state
+            assert self.state, "Handler state not initialized"
             self.state.join(name)
             self._json(self.state.snapshot_for(name))
             return
@@ -579,27 +591,30 @@ class LayoutHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         raw = self.rfile.read(length) if length else b"{}"
         data = json.loads(raw.decode("utf-8") or "{}")
-        assert self.state
+        assert self.state, "Handler state not initialized"
 
         if parsed.path == "/api/join":
-            self.state.join(str(data.get("name", "")).strip()[:40])
+            self.state.join(str(data.get("name", "")).strip()[:MAX_NAME_LENGTH])
             self._json({"ok": True})
             return
         if parsed.path == "/api/answer":
-            result = self.state.submit_answer(str(data.get("name", "")).strip()[:40], str(data.get("value", "")))
+            result = self.state.submit_answer(
+                str(data.get("name", "")).strip()[:MAX_NAME_LENGTH],
+                str(data.get("value", "")),
+            )
             self._json(result)
             return
         if parsed.path == "/api/raise_hand":
-            self.state.raise_hand(str(data.get("name", "")).strip()[:40])
+            self.state.raise_hand(str(data.get("name", "")).strip()[:MAX_NAME_LENGTH])
             self._json({"ok": True})
             return
         if parsed.path == "/api/need_more_time":
-            accepted = self.state.need_more_time(str(data.get("name", "")).strip()[:40])
+            accepted = self.state.need_more_time(str(data.get("name", "")).strip()[:MAX_NAME_LENGTH])
             self._json({"ok": accepted})
             return
         if parsed.path == "/api/times_table_answer":
             result = self.state.submit_waiting_answer(
-                str(data.get("name", "")).strip()[:40],
+                str(data.get("name", "")).strip()[:MAX_NAME_LENGTH],
                 str(data.get("answer", "")),
             )
             self._json(result)
@@ -675,6 +690,7 @@ let name = localStorage.getItem('layout_name') || '';
 let moreTimeUsed = false;
 let currentMode = 'waiting';
 let remainingSeconds = null;
+const MAX_NAME_LENGTH = 40;
 
 const $ = (id) => document.getElementById(id);
 
@@ -793,7 +809,7 @@ function connect() {{
 }}
 
 $('saveName').onclick = () => {{
-  const v = $('nameInput').value.trim().slice(0, 40);
+  const v = $('nameInput').value.trim().slice(0, MAX_NAME_LENGTH);
   if (!v) return;
   name = v;
   localStorage.setItem('layout_name', name);
@@ -833,7 +849,7 @@ $('waitSubmit').onclick = async () => {{
   if (!name) return;
   const answer = $('waitInput').value.trim();
   if (!answer) return;
-  if (hasWs && ws) ws.send(JSON.stringify({{type:'times_table_answer', question:$('waitQuestion').textContent, answer, correct:true}}));
+  if (hasWs && ws) ws.send(JSON.stringify({{type:'times_table_answer', question:$('waitQuestion').textContent, answer}}));
   else {{
     const r = await post('/api/times_table_answer', {{name, answer}});
     onMessage({{type:'times_table_result', ...r}});
@@ -901,7 +917,6 @@ if GI_AVAILABLE:
 
             self.set_content(root)
             GLib.timeout_add_seconds(1, self.refresh)
-            GLib.timeout_add_seconds(3, self.refresh)
 
         def _timer_combo(self) -> Gtk.DropDown:
             model = Gtk.StringList.new(["30", "60", "90"])
@@ -938,7 +953,8 @@ if GI_AVAILABLE:
             self.op_combo.set_selected(4)
             self.range_from = Gtk.SpinButton.new_with_range(1, 1000, 1)
             self.range_to = Gtk.SpinButton.new_with_range(1, 1000, 1)
-            self.range_to.set_value(100)
+            self.range_from.set_value(DEFAULT_RANDOM_MIN)
+            self.range_to.set_value(DEFAULT_RANDOM_MAX)
             self.random_timer_combo = self._timer_combo()
             start = Gtk.Button(label="Zufallsaufgabe starten")
             start.connect("clicked", self.on_start_random)
@@ -1075,9 +1091,9 @@ def main() -> None:
     if websockets is not None:
         ws_server = LayoutWebSocketServer(state)
         ws_server.start()
-        timeout = time.time() + 3
+        timeout = time.time() + WS_STARTUP_TIMEOUT
         while ws_server.port == 0 and time.time() < timeout:
-            time.sleep(0.05)
+            time.sleep(WS_POLL_INTERVAL)
         ws_port = ws_server.port or None
 
     http_server = start_http_server(state, ws_port)
