@@ -943,7 +943,11 @@ if GI_AVAILABLE:
             GLib.timeout_add_seconds(1, self.refresh)
 
         def _set_qr(self, picture: Gtk.Picture, url: str) -> None:
-            if qrcode is None or not url:
+            if not url:
+                picture.set_paintable(None)
+                return
+            if qrcode is None:
+                print("QR-Code deaktiviert: Paket fehlt (pip install qrcode[pil])", file=sys.stderr)
                 picture.set_paintable(None)
                 return
             try:
@@ -958,13 +962,13 @@ if GI_AVAILABLE:
                 texture = Gdk.Texture.new_for_pixbuf(pixbuf)
                 picture.set_paintable(texture)
             except (TypeError, ValueError, OSError, RuntimeError) as exc:
-                print(f"QR-Code konnte nicht erzeugt werden: {exc}", file=sys.stderr)
+                print(f"QR-Code für {url} konnte nicht erzeugt werden: {exc}", file=sys.stderr)
                 picture.set_paintable(None)
 
         def _url_for_students(self) -> str:
             host = self.state.server_ip
             port = self.state.server_port
-            if not host or port <= 0:
+            if not host or not (1 <= port <= 65535):
                 return ""
             try:
                 ipaddress.ip_address(host)
@@ -974,7 +978,7 @@ if GI_AVAILABLE:
 
         def _refresh_connect_ui(self) -> None:
             url = self._url_for_students()
-            self.url_label.set_text(url or "URL wird vorbereitet …")
+            self.url_label.set_text(url or "Warten auf Server-Start …")
             self._set_qr(self.qr_picture, url)
             self.qr_hint_label.set_text(QR_INSTALL_HINT if qrcode is None else "")
 
