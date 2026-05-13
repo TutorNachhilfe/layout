@@ -13,6 +13,7 @@ python3 layout.py
 ## Abhängigkeiten
 - `gi` (GTK4 + Libadwaita)
 - `websockets` (optional, bei Fehlen wird HTTP-Polling genutzt)
+- `qrcode[pil]` (optional, für QR-Code im Lehrer-Fenster)
 
 ## Enthaltene Architektur (kompatibler Stil)
 - `LayoutState`
