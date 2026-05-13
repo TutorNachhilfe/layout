@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import io
 import json
 import os
@@ -964,6 +965,10 @@ if GI_AVAILABLE:
             host = self.state.server_ip
             port = self.state.server_port
             if not host or port <= 0:
+                return ""
+            try:
+                ipaddress.ip_address(host)
+            except ValueError:
                 return ""
             return f"http://{host}:{port}/"
 
