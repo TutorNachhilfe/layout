@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import os
 import random
@@ -24,11 +25,16 @@ except Exception:  # optional dependency
     websockets = None
 
 try:
+    import qrcode
+except ImportError:
+    qrcode = None
+
+try:
     import gi
 
     gi.require_version("Gtk", "4.0")
     gi.require_version("Adw", "1")
-    from gi.repository import Adw, GLib, Gtk
+    from gi.repository import Adw, Gdk, GdkPixbuf, GLib, Gtk
 
     GI_AVAILABLE = True
 except Exception:
@@ -127,6 +133,8 @@ class LayoutState:
         self.students: dict[str, Student] = {}
         self.current_task: TaskSession | None = None
         self.listeners: list[Callable[[], None]] = []
+        self.server_ip = "127.0.0.1"
+        self.server_port = 0
 
     def add_listener(self, listener: Callable[[], None]) -> None:
         self.listeners.append(listener)
@@ -900,6 +908,18 @@ if GI_AVAILABLE:
             )
             root.append(info)
 
+            connect_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+            connect_box.append(Gtk.Label(label="Verbinden", xalign=0))
+            self.qr_picture = Gtk.Picture()
+            self.qr_picture.set_size_request(220, 220)
+            connect_box.append(self.qr_picture)
+            self.url_label = Gtk.Label(xalign=0)
+            self.url_label.set_selectable(True)
+            connect_box.append(self.url_label)
+            self.qr_hint_label = Gtk.Label(xalign=0)
+            connect_box.append(self.qr_hint_label)
+            root.append(connect_box)
+
             notebook = Gtk.Notebook()
             root.append(notebook)
 
@@ -916,7 +936,33 @@ if GI_AVAILABLE:
             notebook.append_page(self.rank_tab, Gtk.Label(label="Ranking"))
 
             self.set_content(root)
+            self._refresh_connect_ui()
             GLib.timeout_add_seconds(1, self.refresh)
+
+        def _set_qr(self, picture: Gtk.Picture, url: str) -> None:
+            if qrcode is None:
+                picture.set_paintable(None)
+                return
+            img = qrcode.make(url)
+            buffer = io.BytesIO()
+            img.save(buffer, format="PNG")
+            loader = GdkPixbuf.PixbufLoader.new_with_type("png")
+            loader.write(buffer.getvalue())
+            loader.close()
+            pixbuf = loader.get_pixbuf()
+            texture = Gdk.Texture.new_for_pixbuf(pixbuf)
+            picture.set_paintable(texture)
+
+        def _url_for_students(self) -> str:
+            host = self.state.server_ip
+            port = self.state.server_port
+            return f"http://{host}:{port}/"
+
+        def _refresh_connect_ui(self) -> None:
+            url = self._url_for_students()
+            self.url_label.set_text(url)
+            self._set_qr(self.qr_picture, url)
+            self.qr_hint_label.set_text("pip install qrcode[pil]" if qrcode is None else "")
 
         def _timer_combo(self) -> Gtk.DropDown:
             model = Gtk.StringList.new(["30", "60", "90"])
@@ -1098,6 +1144,8 @@ def main() -> None:
 
     http_server = start_http_server(state, ws_port)
     local_ip = get_local_ip()
+    state.server_ip = local_ip
+    state.server_port = http_server.server_address[1]
 
     settings.update(
         {
