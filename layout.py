@@ -133,7 +133,7 @@ class LayoutState:
         self.students: dict[str, Student] = {}
         self.current_task: TaskSession | None = None
         self.listeners: list[Callable[[], None]] = []
-        self.server_ip = "127.0.0.1"
+        self.server_ip = ""
         self.server_port = 0
 
     def add_listener(self, listener: Callable[[], None]) -> None:
@@ -940,29 +940,34 @@ if GI_AVAILABLE:
             GLib.timeout_add_seconds(1, self.refresh)
 
         def _set_qr(self, picture: Gtk.Picture, url: str) -> None:
-            if qrcode is None:
+            if qrcode is None or not url:
                 picture.set_paintable(None)
                 return
-            img = qrcode.make(url)
-            buffer = io.BytesIO()
-            img.save(buffer, format="PNG")
-            loader = GdkPixbuf.PixbufLoader.new_with_type("png")
-            loader.write(buffer.getvalue())
-            loader.close()
-            pixbuf = loader.get_pixbuf()
-            texture = Gdk.Texture.new_for_pixbuf(pixbuf)
-            picture.set_paintable(texture)
+            try:
+                img = qrcode.make(url)
+                buffer = io.BytesIO()
+                img.save(buffer, format="PNG")
+                loader = GdkPixbuf.PixbufLoader.new_with_type("png")
+                loader.write(buffer.getvalue())
+                loader.close()
+                pixbuf = loader.get_pixbuf()
+                texture = Gdk.Texture.new_for_pixbuf(pixbuf)
+                picture.set_paintable(texture)
+            except Exception:
+                picture.set_paintable(None)
 
         def _url_for_students(self) -> str:
             host = self.state.server_ip
             port = self.state.server_port
+            if not host or port <= 0:
+                return ""
             return f"http://{host}:{port}/"
 
         def _refresh_connect_ui(self) -> None:
             url = self._url_for_students()
-            self.url_label.set_text(url)
+            self.url_label.set_text(url or "URL wird vorbereitet …")
             self._set_qr(self.qr_picture, url)
-            self.qr_hint_label.set_text("pip install qrcode[pil]" if qrcode is None else "")
+            self.qr_hint_label.set_text("Für QR-Code installieren: pip install qrcode[pil]" if qrcode is None else "")
 
         def _timer_combo(self) -> Gtk.DropDown:
             model = Gtk.StringList.new(["30", "60", "90"])
