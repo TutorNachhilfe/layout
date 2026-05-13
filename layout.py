@@ -947,7 +947,7 @@ if GI_AVAILABLE:
                 picture.set_paintable(None)
                 return
             if qrcode is None:
-                print("QR-Code deaktiviert: Paket fehlt (pip install qrcode[pil])", file=sys.stderr)
+                print(f"QR-Code deaktiviert: {QR_INSTALL_HINT}", file=sys.stderr)
                 picture.set_paintable(None)
                 return
             try:
@@ -956,8 +956,10 @@ if GI_AVAILABLE:
                     img.save(buffer, format="PNG")
                     png_data = buffer.getvalue()
                 loader = GdkPixbuf.PixbufLoader.new_with_type("png")
-                loader.write(png_data)
-                loader.close()
+                try:
+                    loader.write(png_data)
+                finally:
+                    loader.close()
                 pixbuf = loader.get_pixbuf()
                 texture = Gdk.Texture.new_for_pixbuf(pixbuf)
                 picture.set_paintable(texture)
