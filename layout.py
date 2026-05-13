@@ -9,6 +9,7 @@ import json
 import os
 import random
 import socket
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -946,15 +947,17 @@ if GI_AVAILABLE:
                 return
             try:
                 img = qrcode.make(url)
-                buffer = io.BytesIO()
-                img.save(buffer, format="PNG")
+                with io.BytesIO() as buffer:
+                    img.save(buffer, format="PNG")
+                    png_data = buffer.getvalue()
                 loader = GdkPixbuf.PixbufLoader.new_with_type("png")
-                loader.write(buffer.getvalue())
+                loader.write(png_data)
                 loader.close()
                 pixbuf = loader.get_pixbuf()
                 texture = Gdk.Texture.new_for_pixbuf(pixbuf)
                 picture.set_paintable(texture)
-            except Exception:
+            except (TypeError, ValueError, OSError, RuntimeError) as exc:
+                print(f"QR-Code konnte nicht erzeugt werden: {exc}", file=sys.stderr)
                 picture.set_paintable(None)
 
         def _url_for_students(self) -> str:
