@@ -63,6 +63,7 @@ DEFAULT_RANDOM_MAX = 100
 MAX_NAME_LENGTH = 40
 WS_STARTUP_TIMEOUT = 3
 WS_POLL_INTERVAL = 0.05
+QR_INSTALL_HINT = "Für QR-Code installieren: pip install qrcode[pil]"
 
 
 def load_settings() -> dict[str, Any]:
@@ -967,7 +968,7 @@ if GI_AVAILABLE:
             url = self._url_for_students()
             self.url_label.set_text(url or "URL wird vorbereitet …")
             self._set_qr(self.qr_picture, url)
-            self.qr_hint_label.set_text("Für QR-Code installieren: pip install qrcode[pil]" if qrcode is None else "")
+            self.qr_hint_label.set_text(QR_INSTALL_HINT if qrcode is None else "")
 
         def _timer_combo(self) -> Gtk.DropDown:
             model = Gtk.StringList.new(["30", "60", "90"])
